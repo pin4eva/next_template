@@ -1,19 +1,18 @@
-import React, { Fragment } from "react";
-import App from "next/app";
-import PropTypes from "prop-types";
-import Head from "next/head";
-import Nprogress from "nprogress";
-import { Provider } from "react-redux";
 import { ApolloProvider } from "@apollo/react-hooks";
-import { initializeStore, useStore } from "../redux";
-import { initializeApollo, useApollo } from "../apollo";
-import { ThemeProvider } from "theme-ui";
 import { AUTH } from "apollo/queries";
-import Cookie from "js-cookie";
+import App from "next/app";
+import Head from "next/head";
 import Router from "next/router";
+import Nprogress from "nprogress";
+import PropTypes from "prop-types";
+import React, { Fragment } from "react";
+import { Provider } from "react-redux";
 import { ThemeProvider as Styledtheme } from "styled-components";
-
 import { theme } from "theme";
+import { ThemeProvider } from "theme-ui";
+import { initializeApollo, useApollo } from "../apollo";
+import { initializeStore, useStore } from "../redux";
+import cookies from "next-cookies";
 
 Router.events.on("routeChangeStart", () => {
   // console.log("From nprogress", url);
@@ -46,30 +45,30 @@ const MyApp = ({ Component, pageProps }) => {
 MyApp.getInitialProps = async (appctx) => {
   let { ctx } = appctx;
   const reduxStore = initializeStore();
-  const apolloClient = initializeApollo();
+  let apolloClient = initializeApollo();
+
   let token;
   let user;
+
   const pageProps = await App.getInitialProps(appctx);
-  if (ctx.req && ctx.req.cookies) {
-    token = ctx.req.cookies.token;
-  } else {
-    token = Cookie.get("token");
-  }
-  if (token) {
-    // SetToken(token);
+
+  const accessToken = cookies(ctx) || null;
+  if (accessToken.token) {
+    token = accessToken.token;
+    apolloClient = initializeApollo(null, token);
+
     try {
-      // const { data } = await axios.get("/me");
       const { data } = await apolloClient.query({
         query: AUTH,
-        // variables: { token },
       });
-
-      user = data;
-      // console.log("From _app:", data);
+      if (data) {
+        user = data.auth;
+      }
     } catch (error) {
-      console.log(error);
+      console.log(error.message);
     }
   }
+
   return {
     pageProps: {
       ...pageProps,

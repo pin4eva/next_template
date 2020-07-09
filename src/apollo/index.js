@@ -1,52 +1,54 @@
-import { useMemo } from "react";
-import { InMemoryCache } from "apollo-cache-inmemory";
 import { ApolloClient } from "apollo-client";
 import { createHttpLink } from "apollo-link-http";
+import { InMemoryCache } from "apollo-cache-inmemory";
 import { setContext } from "apollo-link-context";
-
+import fetch from "isomorphic-fetch";
+import { useMemo } from "react";
 import Cookie from "js-cookie";
+let apolloClient = null;
 
-let apolloClient;
-let token = Cookie.get("token");
+// Polyfill fetch() on the server (used by apollo-client)
+if (!process.browser) {
+  global.fetch = fetch;
+}
 
-const link = createHttpLink({
-  uri: "/graphql",
-});
-
-const cache = new InMemoryCache();
-
-const authLink = setContext((_, { headers }) => {
-  return {
-    headers: {
-      ...headers,
-      authorization: token,
-    },
-  };
-});
-
-const createApolloClient = () => {
-  return new ApolloClient({
-    ssrMode: typeof window === "undefined",
-    link,
-    cache,
-    request: (operation) => {
-      operation.setContext({
-        headers: {
-          authorization: token,
-        },
-      });
-    },
+function create(initialState, token) {
+  const httpLink = createHttpLink({
+    uri: process.env.baseUrl,
+    credentials: "same-origin",
   });
-};
 
-export const initializeApollo = (initialState = null) => {
-  const _apolloClient = apolloClient ?? createApolloClient();
-  if (initialState) _apolloClient.cache.restore(initialState);
-  if (typeof window === "undefined") return _apolloClient;
-  if (!apolloClient) apolloClient = _apolloClient;
+  const authLink = setContext(() => {
+    return {
+      headers: {
+        authorization:
+          typeof window === "undefined" ? token : Cookie.get("token"),
+      },
+    };
+  });
 
-  return _apolloClient;
-};
+  return new ApolloClient({
+    connectToDevTools: process.browser,
+    ssrMode: !process.browser, // Disables forceFetch on the server (so queries are only run once)
+    link: authLink.concat(httpLink),
+    cache: new InMemoryCache().restore(initialState || {}),
+  });
+}
+
+export function initializeApollo(initialState, options) {
+  // Make sure to create a new client for every server-side request so that data
+  // isn't shared between connections (which would be bad)
+  if (!process.browser) {
+    return create(initialState, options);
+  }
+
+  // Reuse client on the client-side
+  if (!apolloClient) {
+    apolloClient = create(initialState, options);
+  }
+
+  return apolloClient;
+}
 
 export const useApollo = (initialState) => {
   const store = useMemo(() => initializeApollo(initialState), [initialState]);
