@@ -1,28 +1,32 @@
-import { ApolloClient } from "apollo-client";
-import { createHttpLink } from "apollo-link-http";
-import { InMemoryCache } from "apollo-cache-inmemory";
+import { ApolloClient, InMemoryCache, createHttpLink } from "@apollo/client";
+
 import { setContext } from "apollo-link-context";
-import fetch from "isomorphic-fetch";
-import { useMemo } from "react";
+import fetch from "isomorphic-unfetch";
 import Cookie from "js-cookie";
+import { useMemo } from "react";
+
+const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL;
+
 let apolloClient = null;
 
-// Polyfill fetch() on the server (used by apollo-client)
 if (!process.browser) {
   global.fetch = fetch;
 }
 
 function create(initialState, token) {
-  const httpLink = createHttpLink({
-    uri: process.env.baseUrl,
-    credentials: "same-origin",
+  let link = createHttpLink({
+    uri:
+      process.env.NODE_ENV !== "development"
+        ? `${SERVER_URL}/api/graphql`
+        : "http://localhost:8000/api/graphql",
+
+    fetch,
   });
 
   const authLink = setContext(() => {
     return {
       headers: {
-        authorization:
-          typeof window === "undefined" ? token : Cookie.get("token"),
+        Authorization: `Bearer ${token || Cookie.get("token")}` || "",
       },
     };
   });
@@ -30,12 +34,12 @@ function create(initialState, token) {
   return new ApolloClient({
     connectToDevTools: process.browser,
     ssrMode: !process.browser, // Disables forceFetch on the server (so queries are only run once)
-    link: authLink.concat(httpLink),
+    link: authLink.concat(link),
     cache: new InMemoryCache().restore(initialState || {}),
   });
 }
 
-export function initializeApollo(initialState, options) {
+export const initializeApollo = (initialState, options) => {
   // Make sure to create a new client for every server-side request so that data
   // isn't shared between connections (which would be bad)
   if (!process.browser) {
@@ -48,7 +52,7 @@ export function initializeApollo(initialState, options) {
   }
 
   return apolloClient;
-}
+};
 
 export const useApollo = (initialState) => {
   const store = useMemo(() => initializeApollo(initialState), [initialState]);
